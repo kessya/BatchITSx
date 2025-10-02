@@ -247,7 +247,7 @@ process parse_itsx_results_All {
 
     input:
     tuple(
-        path(its2_fungi),
+        path(parsed_fungi),
         path(its2_other),
         path(positions_fungi),
         path(positions_other),
@@ -263,7 +263,7 @@ process parse_itsx_results_All {
     script:
     """
     parse_itsx_all.py \
-      --its2_fungi ${its2_fungi} \
+      --its2_fungi ${parsed_fungi} \
       --its2_other ${its2_other} \
       --positions_fungi ${positions_fungi} \
       --positions_other ${positions_other} \
@@ -292,18 +292,63 @@ process concatenate_fastas {
     """
 }
 
+process restore_duplicates {
+    tag { "restore_${params.region}:${fasta_file.simpleName}" }
+    publishDir "${params.outdir}", mode: 'copy'
+
+    input:
+    path fasta_file
+    path fasta_file_uc
+
+    output:
+    path "parsed_results_combined_${params.region}.full.fasta"
+
+    script:
+    """
+    restore_duplicates.py \
+        --infile "${fasta_file}" \
+        --outfile "parsed_results_combined_${params.region}.full.fasta" \
+        --uc "${fasta_file_uc}"
+    """
+}
+
+process iupac_filter {
+    tag { "filter_${params.region}" }
+    publishDir "${params.outdir}", mode: 'copy'
+
+    input:
+    path restored_fasta
+
+    output:
+    path "final_${params.region}.fasta"
+    path "excluded_${params.region}.txt"
+
+    script:
+    """
+    filter_non_iupac.py \
+        --infile "${restored_fasta}" \
+        --outfile "final_${params.region}.fasta" \
+        --excluded "excluded_${params.region}.txt" \
+        --maxN 6 \
+        --maxIUPAC 16
+    """
+}
+
 // =============================
 // Workflow
 // =============================
 workflow {
     // create logs folder
     new File("${params.outdir}/logs").mkdirs()
-    
+
     //
     // 1. Dereplicate and split input
     //
-    derep_fasta_ch = dereplicate_vsearch(ch_fasta)
-                     .map { unique, uc -> unique }
+    // derep_fasta_ch = dereplicate_vsearch(ch_fasta)
+    //                 .map { unique, uc -> unique }
+    derep_out_ch = dereplicate_vsearch(ch_fasta)
+    derep_fasta_ch = derep_out_ch.map { unique, uc -> unique }
+    derep_uc_ch    = derep_out_ch.map { unique, uc -> uc }
 
     chunked_fasta_ch = split_fasta(derep_fasta_ch)
                        .split_chunks
@@ -345,15 +390,15 @@ workflow {
     //
     // 7. Join fungi + other for All parser
     //
-    paired_ch = fungi_ch
-        .toList()
+    paired_ch = fungi_out.itsx_f_fasta
+        .combine(fungi_ch.toList())
         .combine(other_ch.toList())
-        .map { f, o ->
-            def (targetF, its2F, posF, mergedF, noDetF) = f
+        .map { f_parsed, f_raw, o ->
+            def (targetF, its2F, posF, mergedF, noDetF) = f_raw
             def (targetO, its2O, posO, mergedO, noDetO) = o
 
             tuple(
-                its2F,
+                f_parsed,   // parsed_results_f_${params.region}.fasta
                 its2O,
                 posF,
                 posO,
@@ -371,6 +416,21 @@ workflow {
     concatenated = concatenate_fastas(
         fungi_out.itsx_f_fasta,
         all_out.itsx_all_fasta
+    )
+
+    //
+    // 9. Restore duplicates using concatenated fasta + UC file
+    //
+    restore_out = restore_duplicates(
+        concatenated,
+        derep_uc_ch
+    )
+
+    //
+    // 10. Filter sequences with too many ambiguous bases (N/IUPAC)
+    //
+    iupac_out = iupac_filter(
+        restore_out
     )
 }
 

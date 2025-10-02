@@ -31,7 +31,7 @@ It is built using the [Nextflow](https://www.nextflow.io/) workflow management s
         --region "itsfull" \
         --itsx_bin "ITSx" \
         --vsearch_bin "vsearch" \
-        --itsx_chunksize "100"
+        --itsx_chunksize "1000"
     ```
 
 ## Parameters
