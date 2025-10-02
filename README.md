@@ -34,6 +34,20 @@ It is built using the [Nextflow](https://www.nextflow.io/) workflow management s
         --itsx_chunksize "1000"
     ```
 
+Run on HPC using Singularity container:
+
+    ```bash
+    nextflow run kessya/BatchITSx -r main \
+        -profile singularity,cluster \
+        --input 'path/to/your/input' \
+        --itsx_target "F,All" \
+        --region "itsfull" \
+        --itsx_bin "ITSx" \
+        --vsearch_bin "vsearch" \
+        --itsx_chunksize "1000"
+    ```
+
+
 ## Parameters
 
 - `--input` : Path to the input file containing the sequences (Required)
